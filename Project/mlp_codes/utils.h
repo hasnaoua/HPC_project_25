@@ -1,6 +1,11 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+
 double randn();
 void matmul(double *A, double *B, double *C, int n, int m, int p);
 void add_bias(double *Z, double *b, int n, int p);
