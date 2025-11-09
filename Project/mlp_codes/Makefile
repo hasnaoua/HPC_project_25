@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -O0 -Wall -g
+CFLAGS = -O3 -march=native -ffast-math -Wall -g
 OBJ = main.o model.o utils.o
 TARGET = mlp
 
