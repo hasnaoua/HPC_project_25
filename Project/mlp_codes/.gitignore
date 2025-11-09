@@ -1,5 +1,6 @@
 # Ignore object files
 *.o
+mlp
 
 # Ignore text files
 *.txt
