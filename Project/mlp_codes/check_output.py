@@ -19,6 +19,7 @@ W2 = W2.reshape((nn_hdim, nn_output_dim))
 b1 = b1.reshape((1, nn_hdim))
 b2 = b2.reshape((1, nn_output_dim))
 
+
 # Forward identique au C
 def forward(X):
     a1 = np.tanh(X.dot(W1) + b1)
@@ -27,17 +28,18 @@ def forward(X):
     probs = exp_scores / np.sum(exp_scores, axis=1, keepdims=True)
     return np.argmax(probs, axis=1)
 
+
 # Grille
 x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
 y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
-xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200),
-                     np.linspace(y_min, y_max, 200))
+xx, yy = np.meshgrid(np.linspace(x_min, x_max, 200), np.linspace(y_min, y_max, 200))
 Z = forward(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
 
 # Plot
-plt.figure(figsize=(5,4))
+plt.figure(figsize=(5, 4))
 plt.contourf(xx, yy, Z, cmap=plt.cm.Spectral, alpha=0.6)
-plt.scatter(X[:,0], X[:,1], c=y, cmap=plt.cm.Spectral, edgecolor='k')
+plt.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.cm.Spectral, edgecolor="k")
 plt.title(f"Decision Boundary (hidden={nn_hdim})")
 plt.tight_layout()
 plt.show()
+plt.savefig("result_check")
