@@ -1,124 +1,206 @@
 #include "utils.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
+#include <string.h> 
 
-// ----------------------
-// Random helper
-// ----------------------
-
-// Normal distribution (Box-Muller)
+// -------------------------
+// Random Normal (Box-Muller)
+// -------------------------
 float randn() {
-    float u = ((float) rand() + 1.0f) / ((float) RAND_MAX + 1.0f);
-    float v = ((float) rand() + 1.0f) / ((float) RAND_MAX + 1.0f);
-    return sqrtf(-2.0f * logf(u)) * cosf(2.0f * 3.14159265358979323846f * v);
+    float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
+    float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
+    return sqrtf(-2.0f * logf(u)) * cosf(2.0f * M_PI * v);
 }
 
-// ----------------------
-// Basic tensor ops
-// ----------------------
+// =====================================================
+// Matrix multiplication (A[n×m] * B[m×p] = C[n×p])
+// =====================================================
+void matmul(const float *restrict A,
+            const float *restrict B,
+            float *restrict C,
+            int n, int m, int p)
+{
+    /* Hoist frequently-used local variables outside loops.
+       Initialize each row of C then compute row by row.
+       We load a = A[rA + k] once per k and reuse it across the inner j loop.
+    */
 
-// C[n×p] = A[n×m] * B[m×p]
-void transpose(const float *B, float *B_T, int m, int p) {
-    for (int i = 0; i < m; i++)
-        for (int j = 0; j < p; j++)
-            B_T[j*m + i] = B[i*p + j];
-}
+    int i, k, j;
+    int rA = 0, rB = 0, rC = 0;
+    float a;
 
-void matmul(const float *A, const float *B_T, float *C, int n, int m, int p) {
-    for (int i = 0; i < n; i++) {
-        int rowA = i * m;
-        int rowC = i * p;
+    for (i = 0; i < n; ++i) {
+        rA = i * m;
+        rC = i * p;
 
-        for (int j = 0; j < p; j++) {
-            float sum = 0.0f;
-            int rowB = j * m;
+        /* initialize row of C to 0 */
+        memset(&C[rC], 0, sizeof(float) * (size_t)p);
 
-            for (int k = 0; k < m; k++)
-                sum += A[rowA + k] * B_T[rowB + k];
+        for (k = 0; k < m; ++k) {
+            a = A[rA + k];
+            rB = k * p;
 
-            C[rowC + j] = sum;
+            /* inner loop: add a * B[rB + j] into C[rC + j] */
+            for (j = 0; j < p; ++j)
+                C[rC + j] += a * B[rB + j];
         }
     }
 }
 
+// =====================================================
+// Multiply transpose(A) * B  (same version you gave)
+// A is N×M, B is N×K, result C is M×K
+// =====================================================
+void matmul_Ta_b(const float *restrict A,
+                 const float *restrict B,
+                 float *restrict C,
+                 int N, int M, int K)
+{
+    // Initialize C
+    memset(C, 0, sizeof(float) * (size_t)M * (size_t)K);
 
-// Add bias b[p] to each row of Z[n×p]
-void add_bias(float *Z, float *b, int n, int p) {
-    for (int i = 0; i < n; i++) {
-        int row = i * p;
-        for (int j = 0; j < p; j++)
-            Z[row + j] += b[j];
-    }
-}
+    int rowA=0, rowB=0, rowC=0;
+    float a;
 
-// Softmax row-by-row
-void softmax(float *Z, float *P, int n, int p) {
-    for (int i = 0; i < n; i++) {
-        int row = i * p;
+    for (int i = 0; i < M; i++) {
+        rowC = i * K;
 
-        float sum_exp = 0.0f;
-        for (int j = 0; j < p; j++) {
-            P[row + j] = expf(Z[row + j]); 
-            sum_exp += P[row+j];
+        for (int n = 0; n < N; n++) {
+            rowA = n * M;
+            rowB = n * K;
+
+            a = A[rowA + i];
+
+            for (int j = 0; j < K; j++)
+                C[rowC + j] += a * B[rowB + j];
         }
-        float inv = 1.0f / sum_exp;
-
-        for (int j = 0; j < p; j++)
-            P[row + j] *= inv;
     }
 }
 
-// ----------------------
-// Data loading
-// ----------------------
+// =====================================================
+// Reduce sum over rows: out[d] = sum_n mat[n,d]
+// =====================================================
+void reduce_sum_rows(const float *mat, float *out, int N, int D)
+{
+    for (int j = 0; j < D; j++)
+        out[j] = 0.0f;
 
-int count_lines(const char *filename) {
-    FILE *fp = fopen(filename, "r");
+    for (int n = 0; n < N; n++) {
+        int r = n * D;
+        for (int j = 0; j < D; j++)
+            out[j] += mat[r + j];
+    }
+}
+
+// =====================================================
+// Add bias vector to each row
+// =====================================================
+void add_bias(float *Z, float *b, int n, int p)
+{
+    for (int i = 0; i < n; i++) {
+        int r = i * p;
+        for (int j = 0; j < p; j++)
+            Z[r + j] += b[j];
+    }
+}
+
+// =====================================================
+// Activations
+// =====================================================
+
+// Tanh
+static float tanh_f(float x) { return tanhf(x); }
+static float tanh_d(float a) { return 1.0f - a * a; }
+Activation ACT_TANH = {tanh_f, tanh_d};
+
+// ReLU
+static float relu_f(float x) { return x > 0 ? x : 0.0f; }
+static float relu_d(float a) { return a > 0 ? 1.0f : 0.0f; }
+Activation ACT_RELU = {relu_f, relu_d};
+
+// Sigmoid
+static float sigmoid_f(float x) { return 1.0f / (1.0f + expf(-x)); }
+static float sigmoid_d(float a) { return a * (1.0f - a); }
+Activation ACT_SIGMOID = {sigmoid_f, sigmoid_d};
+
+// =====================================================
+// Tanh derivative over matrix (uses tanh_d now)
+// =====================================================
+void tanh_activation(float *a1, int N, int H, float *dt)
+{
+    int sz = N * H;
+    for (int i = 0; i < sz; i++)
+        dt[i] = tanh_d(a1[i]);  
+}
+
+// =====================================================
+// Softmax
+// =====================================================
+void softmax(float *Z, float *P, int n, int p)
+{
+    for (int i = 0; i < n; i++) {
+        int r = i * p;
+        float s = 0.0f;
+
+        for (int j = 0; j < p; j++) {
+            P[r + j] = expf(Z[r + j]);
+            s += P[r + j];
+        }
+
+        float inv = 1.0f / s;
+        for (int j = 0; j < p; j++)
+            P[r + j] *= inv;
+    }
+}
+
+// =====================================================
+// File utilities
+// =====================================================
+int count_lines(const char *fn)
+{
+    FILE *fp = fopen(fn, "r");
     if (!fp) {
-        perror("File open error");
-        exit(EXIT_FAILURE);
+        perror("open");
+        exit(1);
     }
 
-    int count = 0;
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), fp))
-        count++;
+    int c = 0;
+    char buf[4096];
+    while (fgets(buf, sizeof(buf), fp))
+        c++;
 
     fclose(fp);
-    return count;
+    return c;
 }
 
-void load_X(const char *filename, float *X, int num_examples, int input_dim) {
-    FILE *fp = fopen(filename, "r");
+void load_X(const char *f, float *X, int N, int D)
+{
+    FILE *fp = fopen(f, "r");
     if (!fp) {
-        perror("Error opening X");
-        exit(EXIT_FAILURE);
+        perror("X");
+        exit(1);
     }
 
-    for (int i = 0; i < num_examples; i++)
-        for (int j = 0; j < input_dim; j++)
-            if (fscanf(fp, "%f", &X[i*input_dim + j]) != 1) {
-                fprintf(stderr, "Error reading X row %d col %d\n", i, j);
-                fclose(fp);
-                exit(EXIT_FAILURE);
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < D; j++)
+            if (fscanf(fp, "%f", &X[i * D + j]) != 1) {
+                fprintf(stderr, "Error reading X at %d,%d\n", i, j);
+                exit(1);
             }
 
     fclose(fp);
 }
 
-void load_y(const char *filename, int *y, int num_examples) {
-    FILE *fp = fopen(filename, "r");
+void load_y(const char *f, int *y, int N)
+{
+    FILE *fp = fopen(f, "r");
     if (!fp) {
-        perror("Error opening y");
-        exit(EXIT_FAILURE);
+        perror("y");
+        exit(1);
     }
 
-    for (int i = 0; i < num_examples; i++)
+    for (int i = 0; i < N; i++)
         if (fscanf(fp, "%d", &y[i]) != 1) {
-            fprintf(stderr, "Error reading y at line %d\n", i);
-            fclose(fp);
-            exit(EXIT_FAILURE);
+            fprintf(stderr, "Error reading y at %d\n", i);
+            exit(1);
         }
 
     fclose(fp);

@@ -1,280 +1,159 @@
 #include "model.h"
-#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <string.h>
-#include <time.h>
+#include <math.h>
 
-// --------------------------
-// Global variables
-// --------------------------
-int num_examples;
-int nn_input_dim;
-int nn_output_dim;
-float reg_lambda = 0.01f;
-float epsilon = 0.01f;
+// --------------------------------------------------------
+// Weight initialization
+// --------------------------------------------------------
+void init_weights(MLP *m) {
+    for (int i = 0; i < m->n_in * m->n_hidden; i++)
+        m->W1[i] = randn() / sqrtf(m->n_in);
 
-float *X;  // (num_examples × nn_input_dim)
-int   *y;  // labels
+    for (int i = 0; i < m->n_hidden * m->n_out; i++)
+        m->W2[i] = randn() / sqrtf(m->n_hidden);
 
+    memset(m->b1, 0, m->n_hidden * sizeof(float));
+    memset(m->b2, 0, m->n_out * sizeof(float));
+}
 
-// ============================================================
-// 1. Loss function (float, optimized)
-// ============================================================
-float calculate_loss(float *W1, float *b1, float *W2, float *b2, int nn_hdim)
-{
-    float *z1   = calloc(num_examples * nn_hdim, sizeof(float));
-    float *a1   = calloc(num_examples * nn_hdim, sizeof(float));
-    float *z2   = calloc(num_examples * nn_output_dim, sizeof(float));
-    float *probs = calloc(num_examples * nn_output_dim, sizeof(float));
+// --------------------------------------------------------
+// Forward pass
+// --------------------------------------------------------
+void forward_pass(
+    MLP *m, float *X, int N,
+    float *z1, float *a1, float *z2, float *probs
+) {
+    // z1 = X*W1 + b1
+    matmul(X, m->W1, z1, N, m->n_in, m->n_hidden);
+    add_bias(z1, m->b1, N, m->n_hidden);
 
-    // Forward
-    matmul(X, W1, z1, num_examples, nn_input_dim, nn_hdim);
-    add_bias(z1, b1, num_examples, nn_hdim);
+    // a1 = activation(z1)
+    for (int i = 0; i < N * m->n_hidden; i++)
+        a1[i] = m->act.func(z1[i]);
 
-    for (int i = 0; i < num_examples * nn_hdim; i++)
-        a1[i] = tanhf(z1[i]);
+    // z2 = a1*W2 + b2
+    matmul(a1, m->W2, z2, N, m->n_hidden, m->n_out);
+    add_bias(z2, m->b2, N, m->n_out);
 
-    matmul(a1, W2, z2, num_examples, nn_hdim, nn_output_dim);
-    add_bias(z2, b2, num_examples, nn_output_dim);
+    softmax(z2, probs, N, m->n_out);
+}
 
-    softmax(z2, probs, num_examples, nn_output_dim);
+// --------------------------------------------------------
+// Compute loss (cross-entropy + L2 regularization)
+// --------------------------------------------------------
+float compute_loss(MLP *m, float *X, int *y, int N) {
+    float *z1 = calloc(N * m->n_hidden, sizeof(float));
+    float *a1 = calloc(N * m->n_hidden, sizeof(float));
+    float *z2 = calloc(N * m->n_out, sizeof(float));
+    float *probs = calloc(N * m->n_out, sizeof(float));
 
-    // Cross-entropy
-    float data_loss = 0.0f;
-    for (int i = 0; i < num_examples; i++)
-        data_loss += -logf(probs[i * nn_output_dim + y[i]]);
+    forward_pass(m, X, N, z1, a1, z2, probs);
 
-    // Regularization
+    float loss = 0.0f;
+    for (int i = 0; i < N; i++)
+        loss += -logf(probs[i * m->n_out + y[i]]);
+
+    // L2 regularization
     float reg = 0.0f;
-    for (int i = 0; i < nn_input_dim * nn_hdim; i++)
-        reg += W1[i] * W1[i];
-    for (int i = 0; i < nn_hdim * nn_output_dim; i++)
-        reg += W2[i] * W2[i];
+    for (int i = 0; i < m->n_in * m->n_hidden; i++) reg += m->W1[i] * m->W1[i];
+    for (int i = 0; i < m->n_hidden * m->n_out; i++) reg += m->W2[i] * m->W2[i];
 
-    data_loss += reg_lambda * 0.5f * reg;
+    loss = (loss + 0.5f * m->reg_lambda * reg) / N;
 
-    float loss = data_loss / num_examples;
-
-    free(z1);
-    free(a1);
-    free(z2);
-    free(probs);
-
+    free(z1); free(a1); free(z2); free(probs);
     return loss;
 }
 
+// --------------------------------------------------------
+// Training: backprop + gradient descent
+// --------------------------------------------------------
+void train(
+    MLP *m, float *X, int *y, int N,
+    int num_passes, int print_loss
+) {
+    // Allocate forward buffers
+    float *z1 = calloc(N * m->n_hidden, sizeof(float));
+    float *a1 = calloc(N * m->n_hidden, sizeof(float));
+    float *z2 = calloc(N * m->n_out, sizeof(float));
+    float *probs = calloc(N * m->n_out, sizeof(float));
 
+    // Gradients
+    float *delta3 = malloc(N * m->n_out * sizeof(float));
+    float *delta2 = malloc(N * m->n_hidden * sizeof(float));
+    float *dW1 = malloc(m->n_in * m->n_hidden * sizeof(float));
+    float *dW2 = malloc(m->n_hidden * m->n_out * sizeof(float));
+    float *db1 = malloc(m->n_hidden * sizeof(float));
+    float *db2 = malloc(m->n_out * sizeof(float));
 
-// ============================================================
-// 2. build_model (optimized float version)
-// ============================================================
-void build_model(int nn_hdim, int num_passes, int print_loss)
-{
-    clock_t start = clock();
-    srand(0);
-
-    // Allocate weights
-    float *W1 = malloc(nn_input_dim * nn_hdim * sizeof(float));
-    float *b1 = calloc(nn_hdim, sizeof(float));
-    float *W2 = malloc(nn_hdim * nn_output_dim * sizeof(float));
-    float *b2 = calloc(nn_output_dim, sizeof(float));
-
-    // Transposed weight matrices (for efficient matmul)
-    float *W1_T = malloc(nn_hdim * nn_input_dim * sizeof(float));
-    float *W2_T = malloc(nn_output_dim * nn_hdim * sizeof(float));
-
-    // Initialize transposed versions immediately
-    transpose(W1, W1_T, nn_input_dim, nn_hdim);
-    transpose(W2, W2_T, nn_hdim, nn_output_dim);
-
-    
-
-    // init with Xavier
-    for (int i = 0; i < nn_input_dim * nn_hdim; i++)
-        W1[i] = randn() / sqrtf(nn_input_dim);
-    for (int i = 0; i < nn_hdim * nn_output_dim; i++)
-        W2[i] = randn() / sqrtf(nn_hdim);
-
-    // Temporary buffers (allocated once)
-    float *z1     = calloc(num_examples * nn_hdim, sizeof(float));
-    float *a1     = calloc(num_examples * nn_hdim, sizeof(float));
-    float *dtanh  = malloc(num_examples * nn_hdim * sizeof(float));
-    float *z2     = calloc(num_examples * nn_output_dim, sizeof(float));
-    float *probs  = calloc(num_examples * nn_output_dim, sizeof(float));
-    float *delta3 = malloc(num_examples * nn_output_dim * sizeof(float));
-    float *delta2 = malloc(num_examples * nn_hdim * sizeof(float));
-    float *dW1    = malloc(nn_input_dim * nn_hdim * sizeof(float));
-    float *dW2    = malloc(nn_hdim * nn_output_dim * sizeof(float));
-    float *db1    = malloc(nn_hdim * sizeof(float));
-    float *db2    = malloc(nn_output_dim * sizeof(float));
-
-
-
-    // ======================================
-    // Training loop
-    // ======================================
-    for (int it = 0; it < num_passes; it++)
-    {
-        // ----------------------
-        // Forward propagation
-        // ----------------------
-        //matmul(X, W1, z1, num_examples, nn_input_dim, nn_hdim);
-        matmul(X, W1_T, z1, num_examples, nn_input_dim, nn_hdim);
-        add_bias(z1, b1, num_examples, nn_hdim);
-
-        for (int i = 0; i < num_examples * nn_hdim; i++) {
-            float a = tanhf(z1[i]);
-            a1[i] = a;
-            dtanh[i] = 1.0f - (a * a);
-        }
-
-        //matmul(a1, W2, z2, num_examples, nn_hdim, nn_output_dim);
-        matmul(a1, W2_T, z2, num_examples, nn_hdim, nn_output_dim);
-        add_bias(z2, b2, num_examples, nn_output_dim);
-        softmax(z2, probs, num_examples, nn_output_dim);
-
-
-        // ----------------------
-        // Zero gradients
-        // ----------------------
-        memset(dW1, 0, nn_input_dim * nn_hdim * sizeof(float));
-        memset(dW2, 0, nn_hdim * nn_output_dim * sizeof(float));
-        memset(db1, 0, nn_hdim * sizeof(float));
-        memset(db2, 0, nn_output_dim * sizeof(float));
-
-
-        // ----------------------
-        // Backpropagation
-        // ----------------------
+    for (int it = 0; it < num_passes; it++) {
+        forward_pass(m, X, N, z1, a1, z2, probs);
 
         // delta3 = probs - one_hot
-        for (int i = 0; i < num_examples * nn_output_dim; i++)
-            delta3[i] = probs[i];
+        memcpy(delta3, probs, N * m->n_out * sizeof(float));
+        for (int i = 0; i < N; i++)
+            delta3[i * m->n_out + y[i]] -= 1.0f;
 
-        for (int i = 0; i < num_examples; i++)
-            delta3[i * nn_output_dim + y[i]] -= 1.0f;
+        // Gradients for W2, b2
+        matmul_Ta_b(a1, delta3, dW2, N, m->n_hidden, m->n_out);
+        reduce_sum_rows(delta3, db2, N, m->n_out);
 
+        // Backprop to hidden layer
+        matmul(delta3, m->W2, delta2, N, m->n_out, m->n_hidden);
+        for (int i = 0; i < N * m->n_hidden; i++)
+            delta2[i] *= m->act.deriv(a1[i]);
 
-        // dW2 = a1.T * delta3
-        for (int j = 0; j < nn_hdim; j++)
-            for (int k = 0; k < nn_output_dim; k++)
-            {
-                float sum = 0.0f;
-                for (int n = 0; n < num_examples; n++)
-                    sum += a1[n * nn_hdim + j] * delta3[n * nn_output_dim + k];
-                dW2[j * nn_output_dim + k] = sum;
-            }
-
-        // db2
-        for (int k = 0; k < nn_output_dim; k++)
-        {
-            float sum = 0.0f;
-            for (int n = 0; n < num_examples; n++)
-                sum += delta3[n * nn_output_dim + k];
-            db2[k] = sum;
-        }
-
-        // delta2 = delta3 * W2.T .* dtanh
-        for (int n = 0; n < num_examples; n++)
-        {
-            int base_nh = n * nn_hdim;
-            int base_no = n * nn_output_dim;
-
-            for (int j = 0; j < nn_hdim; j++)
-            {
-                float sum = 0.0f;
-                for (int k = 0; k < nn_output_dim; k++)
-                    sum += delta3[base_no + k] * W2[j * nn_output_dim + k];
-
-                delta2[base_nh + j] = sum * dtanh[base_nh + j];
-            }
-        }
-
-        // dW1 = X.T * delta2
-        for (int i = 0; i < nn_input_dim; i++)
-            for (int j = 0; j < nn_hdim; j++)
-            {
-                float sum = 0.0f;
-                for (int n = 0; n < num_examples; n++)
-                    sum += X[n * nn_input_dim + i] * delta2[n * nn_hdim + j];
-                dW1[i * nn_hdim + j] = sum;
-            }
-
-        // db1
-        for (int j = 0; j < nn_hdim; j++)
-        {
-            float sum = 0.0f;
-            for (int n = 0; n < num_examples; n++)
-                sum += delta2[n * nn_hdim + j];
-            db1[j] = sum;
-        }
+        // Gradients for W1, b1
+        matmul_Ta_b(X, delta2, dW1, N, m->n_in, m->n_hidden);
+        reduce_sum_rows(delta2, db1, N, m->n_hidden);
 
         // Regularization
-        for (int i = 0; i < nn_hdim * nn_output_dim; i++)
-            dW2[i] += reg_lambda * W2[i];
-        for (int i = 0; i < nn_input_dim * nn_hdim; i++)
-            dW1[i] += reg_lambda * W1[i];
+        for (int i = 0; i < m->n_in * m->n_hidden; i++) dW1[i] += m->reg_lambda * m->W1[i];
+        for (int i = 0; i < m->n_hidden * m->n_out; i++) dW2[i] += m->reg_lambda * m->W2[i];
 
-
-        // ----------------------
         // Gradient descent update
-        // ----------------------
-        for (int i = 0; i < nn_input_dim * nn_hdim; i++)
-            W1[i] -= epsilon * dW1[i];
-        transpose(W1, W1_T, nn_input_dim, nn_hdim);
+        for (int i = 0; i < m->n_in * m->n_hidden; i++) m->W1[i] -= m->lr * dW1[i];
+        for (int i = 0; i < m->n_hidden; i++) m->b1[i] -= m->lr * db1[i];
+        for (int i = 0; i < m->n_hidden * m->n_out; i++) m->W2[i] -= m->lr * dW2[i];
+        for (int i = 0; i < m->n_out; i++) m->b2[i] -= m->lr * db2[i];
 
-        for (int i = 0; i < nn_hdim; i++)
-            b1[i] -= epsilon * db1[i];
-
-        for (int i = 0; i < nn_hdim * nn_output_dim; i++)
-            W2[i] -= epsilon * dW2[i];
-        transpose(W2, W2_T, nn_hdim, nn_output_dim);
-
-        for (int i = 0; i < nn_output_dim; i++)
-            b2[i] -= epsilon * db2[i];
-
-
-        // print loss
         if (print_loss && it % 1000 == 0)
-            printf("Loss after %d iterations: %.6f\n",
-                   it, calculate_loss(W1, b1, W2, b2, nn_hdim));
+            printf("Loss %d: %.4f\n", it, compute_loss(m, X, y, N));
     }
 
-
-
-    // Free backprop buffers
-    free(z1); free(a1); free(dtanh);
-    free(z2); free(probs);
+    free(z1); free(a1); free(z2); free(probs);
     free(delta3); free(delta2);
     free(dW1); free(dW2);
     free(db1); free(db2);
-    free(W1_T); free(W2_T);
+}
 
-    // Save weights
-    FILE *fw1 = fopen("output/W1.txt", "w");
-    FILE *fb1 = fopen("output/b1.txt", "w");
-    FILE *fw2 = fopen("output/W2.txt", "w");
-    FILE *fb2 = fopen("output/b2.txt", "w");
+// --------------------------------------------------------
+// Create and free model
+// --------------------------------------------------------
+MLP *create_model(int n_in, int n_hidden, int n_out, Activation act) {
+    MLP *m = malloc(sizeof(MLP));
+    m->n_in = n_in;
+    m->n_hidden = n_hidden;
+    m->n_out = n_out;
+    m->reg_lambda = 0.01f;
+    m->lr = 0.01f;
+    m->act = act;
 
-    for (int i = 0; i < nn_input_dim * nn_hdim; i++)
-        fprintf(fw1, "%f\n", W1[i]);
-    for (int i = 0; i < nn_hdim; i++)
-        fprintf(fb1, "%f\n", b1[i]);
-    for (int i = 0; i < nn_hdim * nn_output_dim; i++)
-        fprintf(fw2, "%f\n", W2[i]);
-    for (int i = 0; i < nn_output_dim; i++)
-        fprintf(fb2, "%f\n", b2[i]);
+    m->W1 = malloc(n_in * n_hidden * sizeof(float));
+    m->b1 = calloc(n_hidden, sizeof(float));
+    m->W2 = malloc(n_hidden * n_out * sizeof(float));
+    m->b2 = calloc(n_out, sizeof(float));
 
-    fclose(fw1);
-    fclose(fb1);
-    fclose(fw2);
-    fclose(fb2);
+    init_weights(m);
+    return m;
+}
 
-    free(W1); free(W2);
-    free(b1); free(b2);
-
-    float seconds = (float)(clock() - start) / CLOCKS_PER_SEC;
-    printf("Execution time: %f s\n", seconds);
+void free_model(MLP *m) {
+    if (!m) return;
+    free(m->W1);
+    free(m->b1);
+    free(m->W2);
+    free(m->b2);
+    free(m);
 }

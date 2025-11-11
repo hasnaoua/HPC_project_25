@@ -1,29 +1,50 @@
 #ifndef MODEL_H
 #define MODEL_H
 
-// ----------------------
-// Global variables
-// ----------------------
-extern int num_examples;
-extern int nn_input_dim;
-extern int nn_output_dim;
+#include "utils.h"
 
-extern float reg_lambda;
-extern float epsilon;
+// -------------------------
+// Multi-layer Perceptron model
+// -------------------------
+typedef struct {
+    int n_in;       // Input dimension
+    int n_hidden;   // Hidden layer size
+    int n_out;      // Output dimension
+    float reg_lambda; // Regularization strength
+    float lr;         // Learning rate
 
-// Dataset
-extern float *X;
-extern int *y;
+    float *W1, *b1;   // Input -> hidden weights and bias
+    float *W2, *b2;   // Hidden -> output weights and bias
 
-// ----------------------
-// Functions
-// ----------------------
-float calculate_loss(float *W1, float *b1,
-                     float *W2, float *b2,
-                     int nn_hdim);
+    Activation act;   // Activation function for hidden layer
+} MLP;
 
-void build_model(int nn_hdim,
-                 int num_passes,
-                 int print_loss);
+// -------------------------
+// Model creation & initialization
+// -------------------------
+MLP *create_model(int n_in, int n_hidden, int n_out, Activation act);
+void free_model(MLP *m);
+void init_weights(MLP *m);
+
+// -------------------------
+// Forward pass
+// -------------------------
+void forward_pass(
+    MLP *m, float *X, int N,
+    float *z1, float *a1, float *z2, float *probs
+);
+
+// -------------------------
+// Loss computation
+// -------------------------
+float compute_loss(MLP *m, float *X, int *y, int N);
+
+// -------------------------
+// Training (backprop + gradient descent)
+// -------------------------
+void train(
+    MLP *m, float *X, int *y, int N,
+    int num_passes, int print_loss
+);
 
 #endif
