@@ -2,7 +2,7 @@
 #include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>  // for timing
+#include <time.h>  
 
 int main() {
     // -------------------------

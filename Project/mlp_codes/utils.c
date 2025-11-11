@@ -1,10 +1,11 @@
 #include "utils.h"
-#include <string.h> 
+#include <string.h>
 
 // -------------------------
 // Random Normal (Box-Muller)
 // -------------------------
-float randn() {
+float randn()
+{
     float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
     float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
     return sqrtf(-2.0f * logf(u)) * cosf(2.0f * M_PI * v);
@@ -19,58 +20,91 @@ void matmul(const float *restrict A,
             int n, int m, int p)
 {
     /* Hoist frequently-used local variables outside loops.
-       Initialize each row of C then compute row by row.
-       We load a = A[rA + k] once per k and reuse it across the inner j loop.
-    */
+      Initialize each row of C then compute row by row.
+      We load a = A[rA + k] once per k and reuse it across the inner j loop.
+      We use  Tiling
+   */
 
-    int i, k, j;
-    int rA = 0, rB = 0, rC = 0;
-    float a;
+    // Initialize C to zero once
+    memset(C, 0, sizeof(float) * (size_t)(n * p));
 
-    for (i = 0; i < n; ++i) {
-        rA = i * m;
-        rC = i * p;
+    for (int i0 = 0; i0 < n; i0 += TILE)
+    {
+        int iMax = (i0 + TILE < n) ? (i0 + TILE) : n;
 
-        /* initialize row of C to 0 */
-        memset(&C[rC], 0, sizeof(float) * (size_t)p);
+        for (int k0 = 0; k0 < m; k0 += TILE)
+        {
+            int kMax = (k0 + TILE < m) ? (k0 + TILE) : m;
 
-        for (k = 0; k < m; ++k) {
-            a = A[rA + k];
-            rB = k * p;
+            for (int j0 = 0; j0 < p; j0 += TILE)
+            {
+                int jMax = (j0 + TILE < p) ? (j0 + TILE) : p;
 
-            /* inner loop: add a * B[rB + j] into C[rC + j] */
-            for (j = 0; j < p; ++j)
-                C[rC + j] += a * B[rB + j];
+                // Tiled computation
+                for (int i = i0; i < iMax; i++)
+                {
+                    int rA = i * m;
+                    int rC = i * p;
+
+                    for (int k = k0; k < kMax; k++)
+                    {
+                        float a = A[rA + k];
+                        int rB = k * p;
+
+                        for (int j = j0; j < jMax; j++)
+                        {
+                            C[rC + j] += a * B[rB + j];
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-// =====================================================
-// Multiply transpose(A) * B  (same version you gave)
-// A is N×M, B is N×K, result C is M×K
-// =====================================================
+// =============================================================
+// Tiled matrix multiplication: transpose(A) * B
+// A is N×M, B is N×K, C is M×K
+// C[i,j] = sum_n A[n,i] * B[n,j]
+// =============================================================
 void matmul_Ta_b(const float *restrict A,
                  const float *restrict B,
                  float *restrict C,
                  int N, int M, int K)
 {
-    // Initialize C
+
+    // Initialize C to zero once
     memset(C, 0, sizeof(float) * (size_t)M * (size_t)K);
 
-    int rowA=0, rowB=0, rowC=0;
-    float a;
+    for (int i0 = 0; i0 < M; i0 += TILE)
+    {
+        int iMax = (i0 + TILE < M) ? (i0 + TILE) : M;
 
-    for (int i = 0; i < M; i++) {
-        rowC = i * K;
+        for (int n0 = 0; n0 < N; n0 += TILE)
+        {
+            int nMax = (n0 + TILE < N) ? (n0 + TILE) : N;
 
-        for (int n = 0; n < N; n++) {
-            rowA = n * M;
-            rowB = n * K;
+            for (int j0 = 0; j0 < K; j0 += TILE)
+            {
+                int jMax = (j0 + TILE < K) ? (j0 + TILE) : K;
 
-            a = A[rowA + i];
+                // Tiled computation
+                for (int i = i0; i < iMax; i++)
+                {
+                    int rowC = i * K;
 
-            for (int j = 0; j < K; j++)
-                C[rowC + j] += a * B[rowB + j];
+                    for (int n = n0; n < nMax; n++)
+                    {
+                        int rowA = n * M;
+                        int rowB = n * K;
+
+                        float a = A[rowA + i];
+
+                        for (int j = j0; j < jMax; j++)
+                            C[rowC + j] += a * B[rowB + j];
+                    }
+                }
+            }
         }
     }
 }
@@ -83,7 +117,8 @@ void reduce_sum_rows(const float *mat, float *out, int N, int D)
     for (int j = 0; j < D; j++)
         out[j] = 0.0f;
 
-    for (int n = 0; n < N; n++) {
+    for (int n = 0; n < N; n++)
+    {
         int r = n * D;
         for (int j = 0; j < D; j++)
             out[j] += mat[r + j];
@@ -95,7 +130,8 @@ void reduce_sum_rows(const float *mat, float *out, int N, int D)
 // =====================================================
 void add_bias(float *Z, float *b, int n, int p)
 {
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++)
+    {
         int r = i * p;
         for (int j = 0; j < p; j++)
             Z[r + j] += b[j];
@@ -128,7 +164,7 @@ void tanh_activation(float *a1, int N, int H, float *dt)
 {
     int sz = N * H;
     for (int i = 0; i < sz; i++)
-        dt[i] = tanh_d(a1[i]);  
+        dt[i] = tanh_d(a1[i]);
 }
 
 // =====================================================
@@ -136,11 +172,13 @@ void tanh_activation(float *a1, int N, int H, float *dt)
 // =====================================================
 void softmax(float *Z, float *P, int n, int p)
 {
-    for (int i = 0; i < n; i++) {
+    for (int i = 0; i < n; i++)
+    {
         int r = i * p;
         float s = 0.0f;
 
-        for (int j = 0; j < p; j++) {
+        for (int j = 0; j < p; j++)
+        {
             P[r + j] = expf(Z[r + j]);
             s += P[r + j];
         }
@@ -157,7 +195,8 @@ void softmax(float *Z, float *P, int n, int p)
 int count_lines(const char *fn)
 {
     FILE *fp = fopen(fn, "r");
-    if (!fp) {
+    if (!fp)
+    {
         perror("open");
         exit(1);
     }
@@ -174,14 +213,16 @@ int count_lines(const char *fn)
 void load_X(const char *f, float *X, int N, int D)
 {
     FILE *fp = fopen(f, "r");
-    if (!fp) {
+    if (!fp)
+    {
         perror("X");
         exit(1);
     }
 
     for (int i = 0; i < N; i++)
         for (int j = 0; j < D; j++)
-            if (fscanf(fp, "%f", &X[i * D + j]) != 1) {
+            if (fscanf(fp, "%f", &X[i * D + j]) != 1)
+            {
                 fprintf(stderr, "Error reading X at %d,%d\n", i, j);
                 exit(1);
             }
@@ -192,13 +233,15 @@ void load_X(const char *f, float *X, int N, int D)
 void load_y(const char *f, int *y, int N)
 {
     FILE *fp = fopen(f, "r");
-    if (!fp) {
+    if (!fp)
+    {
         perror("y");
         exit(1);
     }
 
     for (int i = 0; i < N; i++)
-        if (fscanf(fp, "%d", &y[i]) != 1) {
+        if (fscanf(fp, "%d", &y[i]) != 1)
+        {
             fprintf(stderr, "Error reading y at %d\n", i);
             exit(1);
         }
