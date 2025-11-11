@@ -17,6 +17,8 @@ int main() {
     int input_dim = 2;       // Number of features
     int output_dim = 2;      // Number of classes
     int hidden_dim = 10;     // Number of hidden neurons
+    float reg_lambda = 0.01f;
+    float lr = 0.01f;
 
     // -------------------------
     // Count examples
@@ -51,7 +53,7 @@ int main() {
     printf("Starting training...\n");
     clock_t start_time = clock();
 
-    train(model, X, y, num_examples, 20000, 1); // 20000 iterations, print loss
+    train(model, X, y, num_examples, lr, reg_lambda, 256, 20000, 1);
 
     clock_t end_time = clock();
     float elapsed_sec = (float)(end_time - start_time) / CLOCKS_PER_SEC;
