@@ -42,10 +42,11 @@ float compute_loss(MLP *m, float *X, int *y, int N);
 // -------------------------
 // Training (backprop + gradient descent)
 // -------------------------
-void train(
-    MLP *m, float *X, int *y, int N,
-    int num_passes, int print_loss
-);
+void train(MLP *m,
+           float *X_train, int *y_train, int N_train,
+           float *X_test,  int *y_test,  int N_test,
+           int num_passes, int print_loss);
+
 // -------------------------
 // Evaluation of model
 // -------------------------
