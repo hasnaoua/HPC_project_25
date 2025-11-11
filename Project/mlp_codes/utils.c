@@ -19,21 +19,29 @@ float randn() {
 // ----------------------
 
 // C[n×p] = A[n×m] * B[m×p]
-void matmul(float *A, float *B, float *C, int n, int m, int p) {
+void transpose(const float *B, float *B_T, int m, int p) {
+    for (int i = 0; i < m; i++)
+        for (int j = 0; j < p; j++)
+            B_T[j*m + i] = B[i*p + j];
+}
+
+void matmul(const float *A, const float *B_T, float *C, int n, int m, int p) {
     for (int i = 0; i < n; i++) {
         int rowA = i * m;
         int rowC = i * p;
 
         for (int j = 0; j < p; j++) {
             float sum = 0.0f;
+            int rowB = j * m;
 
             for (int k = 0; k < m; k++)
-                sum += A[rowA + k] * B[k*p + j];
+                sum += A[rowA + k] * B_T[rowB + k];
 
             C[rowC + j] = sum;
         }
     }
 }
+
 
 // Add bias b[p] to each row of Z[n×p]
 void add_bias(float *Z, float *b, int n, int p) {

@@ -10,7 +10,8 @@
 float randn();
 
 // Basic tensor ops
-void matmul(float *A, float *B, float *C, int n, int m, int p);
+void matmul(const float *A, const float *B_T, float *C, int n, int m, int p);
+void transpose(const float *B, float *B_T, int m, int p);
 void add_bias(float *Z, float *b, int n, int p);
 void softmax(float *Z, float *P, int n, int p);
 

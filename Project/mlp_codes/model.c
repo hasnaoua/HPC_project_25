@@ -81,6 +81,16 @@ void build_model(int nn_hdim, int num_passes, int print_loss)
     float *W2 = malloc(nn_hdim * nn_output_dim * sizeof(float));
     float *b2 = calloc(nn_output_dim, sizeof(float));
 
+    // Transposed weight matrices (for efficient matmul)
+    float *W1_T = malloc(nn_hdim * nn_input_dim * sizeof(float));
+    float *W2_T = malloc(nn_output_dim * nn_hdim * sizeof(float));
+
+    // Initialize transposed versions immediately
+    transpose(W1, W1_T, nn_input_dim, nn_hdim);
+    transpose(W2, W2_T, nn_hdim, nn_output_dim);
+
+    
+
     // init with Xavier
     for (int i = 0; i < nn_input_dim * nn_hdim; i++)
         W1[i] = randn() / sqrtf(nn_input_dim);
@@ -110,7 +120,8 @@ void build_model(int nn_hdim, int num_passes, int print_loss)
         // ----------------------
         // Forward propagation
         // ----------------------
-        matmul(X, W1, z1, num_examples, nn_input_dim, nn_hdim);
+        //matmul(X, W1, z1, num_examples, nn_input_dim, nn_hdim);
+        matmul(X, W1_T, z1, num_examples, nn_input_dim, nn_hdim);
         add_bias(z1, b1, num_examples, nn_hdim);
 
         for (int i = 0; i < num_examples * nn_hdim; i++) {
@@ -119,7 +130,8 @@ void build_model(int nn_hdim, int num_passes, int print_loss)
             dtanh[i] = 1.0f - (a * a);
         }
 
-        matmul(a1, W2, z2, num_examples, nn_hdim, nn_output_dim);
+        //matmul(a1, W2, z2, num_examples, nn_hdim, nn_output_dim);
+        matmul(a1, W2_T, z2, num_examples, nn_hdim, nn_output_dim);
         add_bias(z2, b2, num_examples, nn_output_dim);
         softmax(z2, probs, num_examples, nn_output_dim);
 
@@ -211,12 +223,14 @@ void build_model(int nn_hdim, int num_passes, int print_loss)
         // ----------------------
         for (int i = 0; i < nn_input_dim * nn_hdim; i++)
             W1[i] -= epsilon * dW1[i];
+        transpose(W1, W1_T, nn_input_dim, nn_hdim);
 
         for (int i = 0; i < nn_hdim; i++)
             b1[i] -= epsilon * db1[i];
 
         for (int i = 0; i < nn_hdim * nn_output_dim; i++)
             W2[i] -= epsilon * dW2[i];
+        transpose(W2, W2_T, nn_hdim, nn_output_dim);
 
         for (int i = 0; i < nn_output_dim; i++)
             b2[i] -= epsilon * db2[i];
@@ -236,7 +250,7 @@ void build_model(int nn_hdim, int num_passes, int print_loss)
     free(delta3); free(delta2);
     free(dW1); free(dW2);
     free(db1); free(db2);
-
+    free(W1_T); free(W2_T);
 
     // Save weights
     FILE *fw1 = fopen("output/W1.txt", "w");
