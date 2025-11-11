@@ -69,17 +69,32 @@ float compute_loss(MLP *m, float *X, int *y, int N) {
 // --------------------------------------------------------
 // Training: backprop + gradient descent
 // --------------------------------------------------------
-void train(
-    MLP *m, float *X, int *y, int N,
-    int num_passes, int print_loss
-) {
-    // Allocate forward buffers
+void train(MLP *m, float *X, int *y, int N,
+           int num_passes, int print_loss)
+{
+    // Création du dossier Losses si inexistant
+    system("mkdir -p Losses");
+
+    // Nom du fichier de sortie selon l’activation
+    const char *act_name = "unknown";
+    if (m->act.func == ACT_TANH.func) act_name = "tanh";
+    else if (m->act.func == ACT_RELU.func) act_name = "relu";
+    else if (m->act.func == ACT_SIGMOID.func) act_name = "sigmoid";
+
+    char loss_file[128];
+    sprintf(loss_file, "Losses/loss_%s.txt", act_name);
+    FILE *f = fopen(loss_file, "w");
+    if (!f) {
+        perror("open loss file");
+        return;
+    }
+
+    // Allocation des buffers
     float *z1 = calloc(N * m->n_hidden, sizeof(float));
     float *a1 = calloc(N * m->n_hidden, sizeof(float));
     float *z2 = calloc(N * m->n_out, sizeof(float));
     float *probs = calloc(N * m->n_out, sizeof(float));
 
-    // Gradients
     float *delta3 = malloc(N * m->n_out * sizeof(float));
     float *delta2 = malloc(N * m->n_hidden * sizeof(float));
     float *dW1 = malloc(m->n_in * m->n_hidden * sizeof(float));
@@ -87,6 +102,7 @@ void train(
     float *db1 = malloc(m->n_hidden * sizeof(float));
     float *db2 = malloc(m->n_out * sizeof(float));
 
+    // Boucle d'entraînement
     for (int it = 0; it < num_passes; it++) {
         forward_pass(m, X, N, z1, a1, z2, probs);
 
@@ -95,33 +111,39 @@ void train(
         for (int i = 0; i < N; i++)
             delta3[i * m->n_out + y[i]] -= 1.0f;
 
-        // Gradients for W2, b2
+        // Gradients W2, b2
         matmul_Ta_b(a1, delta3, dW2, N, m->n_hidden, m->n_out);
         reduce_sum_rows(delta3, db2, N, m->n_out);
 
-        // Backprop to hidden layer
+        // Backprop vers la couche cachée
         matmul(delta3, m->W2, delta2, N, m->n_out, m->n_hidden);
         for (int i = 0; i < N * m->n_hidden; i++)
             delta2[i] *= m->act.deriv(a1[i]);
 
-        // Gradients for W1, b1
+        // Gradients W1, b1
         matmul_Ta_b(X, delta2, dW1, N, m->n_in, m->n_hidden);
         reduce_sum_rows(delta2, db1, N, m->n_hidden);
 
-        // Regularization
+        // Régularisation
         for (int i = 0; i < m->n_in * m->n_hidden; i++) dW1[i] += m->reg_lambda * m->W1[i];
         for (int i = 0; i < m->n_hidden * m->n_out; i++) dW2[i] += m->reg_lambda * m->W2[i];
 
-        // Gradient descent update
+        // Mise à jour par descente de gradient
         for (int i = 0; i < m->n_in * m->n_hidden; i++) m->W1[i] -= m->lr * dW1[i];
         for (int i = 0; i < m->n_hidden; i++) m->b1[i] -= m->lr * db1[i];
         for (int i = 0; i < m->n_hidden * m->n_out; i++) m->W2[i] -= m->lr * dW2[i];
         for (int i = 0; i < m->n_out; i++) m->b2[i] -= m->lr * db2[i];
 
-        if (print_loss && it % 1000 == 0)
-            printf("Loss %d: %.4f\n", it, compute_loss(m, X, y, N));
+        // Enregistrer la perte périodiquement
+        if (it % 1000 == 0) {
+            float loss = compute_loss(m, X, y, N);
+            fprintf(f, "%d %.6f\n", it, loss);
+            if (print_loss) printf("[%s] Iter %d: loss = %.6f\n", act_name, it, loss);
+        }
     }
 
+    // Nettoyage
+    fclose(f);
     free(z1); free(a1); free(z2); free(probs);
     free(delta3); free(delta2);
     free(dW1); free(dW2);
