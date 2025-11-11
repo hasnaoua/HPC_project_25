@@ -46,5 +46,10 @@ void train(
     MLP *m, float *X, int *y, int N,
     int num_passes, int print_loss
 );
+// -------------------------
+// Evaluation of model
+// -------------------------
+float evaluate(MLP *m, float *X, int *y, int N);
+
 
 #endif

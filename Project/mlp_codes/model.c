@@ -150,6 +150,39 @@ void train(MLP *m, float *X, int *y, int N,
     free(db1); free(db2);
 }
 
+
+// --------------------------------------------------------
+// Evaluate model accuracy on test data
+// --------------------------------------------------------
+float evaluate(MLP *m, float *X, int *y, int N)
+{
+    int correct = 0;
+
+    float *z1 = calloc(N * m->n_hidden, sizeof(float));
+    float *a1 = calloc(N * m->n_hidden, sizeof(float));
+    float *z2 = calloc(N * m->n_out, sizeof(float));
+    float *probs = calloc(N * m->n_out, sizeof(float));
+
+    forward_pass(m, X, N, z1, a1, z2, probs);
+
+    for (int i = 0; i < N; i++) {
+        int pred = 0;
+        float maxp = probs[i * m->n_out];
+        for (int j = 1; j < m->n_out; j++) {
+            if (probs[i * m->n_out + j] > maxp) {
+                maxp = probs[i * m->n_out + j];
+                pred = j;
+            }
+        }
+        if (pred == y[i]) correct++;
+    }
+
+    free(z1); free(a1); free(z2); free(probs);
+
+    return (float)correct / N;
+}
+
+
 // --------------------------------------------------------
 // Create and free model
 // --------------------------------------------------------
