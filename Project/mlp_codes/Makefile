@@ -1,38 +1,52 @@
-# -------------------------
+# =========================================================
 # Compiler settings
-# -------------------------
-CC = gcc
-CFLAGS = -O3 -march=native -ffast-math -Wall -g
+# =========================================================
+# Use MPI compiler wrapper for hybrid parallelism
+CC = mpicc
+
+# Optimization and parallel flags
+CFLAGS = -O3 -march=native -ffast-math -Wall -g -fopenmp
+LDFLAGS = -fopenmp -lm
+
+# Target name
 TARGET = mlp
 
 # Object files
 OBJ = main.o model.o utils.o
 
-# -------------------------
+# =========================================================
 # Default target
-# -------------------------
+# =========================================================
 all: $(TARGET)
 
-# -------------------------
+# =========================================================
 # Link the executable
-# -------------------------
+# =========================================================
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -lm -o $(TARGET)
+	$(CC) $(CFLAGS) $(OBJ) $(LDFLAGS) -o $(TARGET)
 
-# -------------------------
+# =========================================================
 # Compile source files
-# -------------------------
-main.o: main.c model.h utils.h
-	$(CC) $(CFLAGS) -c main.c
+# =========================================================
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-model.o: model.c model.h utils.h
-	$(CC) $(CFLAGS) -c model.c
+# =========================================================
+# Run targets
+# =========================================================
+run:
+	./$(TARGET)
 
-utils.o: utils.c utils.h
-	$(CC) $(CFLAGS) -c utils.c
+# Run with OpenMP threads
+run_omp:
+	OMP_NUM_THREADS=2 ./$(TARGET)
 
-# -------------------------
+# Run with MPI processes (and OpenMP inside each process)
+run_mpi:
+	mpirun -np 1 ./$(TARGET)
+
+# =========================================================
 # Clean build files
-# -------------------------
+# =========================================================
 clean:
 	rm -f *.o $(TARGET)
