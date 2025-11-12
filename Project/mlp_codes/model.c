@@ -5,6 +5,17 @@
 #include <math.h>
 
 // --------------------------------------------------------
+// Learning Rate Schedules
+// --------------------------------------------------------
+float inverse_time_decay(float eta0, float k, int t) {
+    return eta0 / (1.0f + k * t);
+}
+
+float exponential_decay(float eta0, float k, int t) {
+    return eta0 * expf(-k * t);
+}
+
+// --------------------------------------------------------
 // Weight initialization
 // --------------------------------------------------------
 void init_weights(MLP *m) {
@@ -21,19 +32,14 @@ void init_weights(MLP *m) {
 // --------------------------------------------------------
 // Forward pass
 // --------------------------------------------------------
-void forward_pass(
-    MLP *m, float *X, int N,
-    float *z1, float *a1, float *z2, float *probs
-) {
-    // z1 = X*W1 + b1
+void forward_pass(MLP *m, float *X, int N,
+                  float *z1, float *a1, float *z2, float *probs) {
     matmul(X, m->W1, z1, N, m->n_in, m->n_hidden);
     add_bias(z1, m->b1, N, m->n_hidden);
 
-    // a1 = activation(z1)
     for (int i = 0; i < N * m->n_hidden; i++)
         a1[i] = m->act.func(z1[i]);
 
-    // z2 = a1*W2 + b2
     matmul(a1, m->W2, z2, N, m->n_hidden, m->n_out);
     add_bias(z2, m->b2, N, m->n_out);
 
@@ -43,7 +49,7 @@ void forward_pass(
 // --------------------------------------------------------
 // Compute loss (cross-entropy + L2 regularization)
 // --------------------------------------------------------
-float compute_loss(MLP *m, float *X, int *y, int N) {
+float compute_loss(MLP *m, float *X, int *y, int N, float reg_lambda) {
     float *z1 = calloc(N * m->n_hidden, sizeof(float));
     float *a1 = calloc(N * m->n_hidden, sizeof(float));
     float *z2 = calloc(N * m->n_out, sizeof(float));
@@ -55,122 +61,136 @@ float compute_loss(MLP *m, float *X, int *y, int N) {
     for (int i = 0; i < N; i++)
         loss += -logf(probs[i * m->n_out + y[i]]);
 
-    // L2 regularization
     float reg = 0.0f;
     for (int i = 0; i < m->n_in * m->n_hidden; i++) reg += m->W1[i] * m->W1[i];
     for (int i = 0; i < m->n_hidden * m->n_out; i++) reg += m->W2[i] * m->W2[i];
 
-    loss = (loss + 0.5f * m->lr * reg) / N; // Compute average loss
+    loss = (loss + 0.5f * m->reg_lambda * reg) / N;
 
     free(z1); free(a1); free(z2); free(probs);
     return loss;
 }
-// --------------------------------------------------------
-// Training: backprop + gradient descent + eval loss logging
-// --------------------------------------------------------
-void train(MLP *m, 
-           float *X_train, int *y_train, int N_train,
-           float *X_test,  int *y_test,  int N_test,
-           int num_passes, int print_loss)
-{
-    //system("mkdir -p Losses");
 
-    // Identify activation function for file naming
+// --------------------------------------------------------
+// Gradient update
+// --------------------------------------------------------
+void update_gradient(MLP *m, float *dW1, float *dW2, float *db1, float *db2, float lr) {
+    for (int i = 0; i < m->n_in * m->n_hidden; i++)
+        m->W1[i] -= lr * dW1[i];
+    for (int i = 0; i < m->n_hidden; i++)
+        m->b1[i] -= lr * db1[i];
+    for (int i = 0; i < m->n_hidden * m->n_out; i++)
+        m->W2[i] -= lr * dW2[i];
+    for (int i = 0; i < m->n_out; i++)
+        m->b2[i] -= lr * db2[i];
+}
+
+// --------------------------------------------------------
+// Training: backprop + dynamic LR
+// --------------------------------------------------------
+void train(MLP *m,
+           float *X_train, int *y_train, int N_train, float lr0,
+           float reg_lambda, int batch_size, float *X_test, int *y_test,
+           int N_test, int num_passes, int print_loss,
+           LRSchedule lr_schedule, float k)
+{
     const char *act_name = "unknown";
     if (m->act.func == ACT_TANH.func) act_name = "tanh";
     else if (m->act.func == ACT_RELU.func) act_name = "relu";
     else if (m->act.func == ACT_SIGMOID.func) act_name = "sigmoid";
 
-    // Output file for train + eval loss
     char loss_file[128];
     sprintf(loss_file, "Losses/loss_%s.txt", act_name);
     FILE *f = fopen(loss_file, "w");
-    if (!f) {
-        perror("open loss file");
-        return;
-    }
+    if (!f) { perror("open loss file"); return; }
 
-    // Buffers
-    float *z1 = calloc(N_train * m->n_hidden, sizeof(float));
-    float *a1 = calloc(N_train * m->n_hidden, sizeof(float));
-    float *z2 = calloc(N_train * m->n_out, sizeof(float));
-    float *probs = calloc(N_train * m->n_out, sizeof(float));
+    if (batch_size <= 0) batch_size = N_train;
+    if (batch_size > N_train) batch_size = N_train;
 
-    float *delta3 = malloc(N_train * m->n_out * sizeof(float));
-    float *delta2 = malloc(N_train * m->n_hidden * sizeof(float));
+    int maxB = batch_size;
+    float *z1 = calloc(maxB * m->n_hidden, sizeof(float));
+    float *a1 = calloc(maxB * m->n_hidden, sizeof(float));
+    float *z2 = calloc(maxB * m->n_out, sizeof(float));
+    float *probs = calloc(maxB * m->n_out, sizeof(float));
+    float *delta3 = malloc(maxB * m->n_out * sizeof(float));
+    float *delta2 = malloc(maxB * m->n_hidden * sizeof(float));
     float *dW1 = malloc(m->n_in * m->n_hidden * sizeof(float));
     float *dW2 = malloc(m->n_hidden * m->n_out * sizeof(float));
     float *db1 = malloc(m->n_hidden * sizeof(float));
     float *db2 = malloc(m->n_out * sizeof(float));
+    float *X_batch = malloc(maxB * m->n_in * sizeof(float));
+    int *y_batch = malloc(maxB * sizeof(int));
 
-    // Training loop
-    for (int it = 0; it < num_passes; it++) {
-        forward_pass(m, X_train, N_train, z1, a1, z2, probs);
+    int num_batches = (N_train + batch_size - 1) / batch_size;
 
-        // delta3 = probs - one_hot(y)
-        memcpy(delta3, probs, N_train * m->n_out * sizeof(float));
-        for (int i = 0; i < N_train; i++)
-            delta3[i * m->n_out + y_train[i]] -= 1.0f;
+    for (int epoch = 0; epoch < num_passes; ++epoch) {
+        float lr_t = (lr_schedule != NULL) ? lr_schedule(lr0, k, epoch) : lr0;
+        int cursor = 0;
 
-        // Gradients
-        matmul_Ta_b(a1, delta3, dW2, N_train, m->n_hidden, m->n_out);
-        reduce_sum_rows(delta3, db2, N_train, m->n_out);
+        for (int b = 0; b < num_batches; ++b) {
+            int bs = (cursor + batch_size <= N_train) ? batch_size : (N_train - cursor);
+            for (int i = 0; i < bs; ++i) {
+                int src = cursor + i;
+                y_batch[i] = y_train[src];
+                for (int f = 0; f < m->n_in; ++f)
+                    X_batch[i * m->n_in + f] = X_train[src * m->n_in + f];
+            }
+            cursor += bs;
 
-        matmul(delta3, m->W2, delta2, N_train, m->n_out, m->n_hidden);
-        for (int i = 0; i < N_train * m->n_hidden; i++)
-            delta2[i] *= m->act.deriv(a1[i]);
+            forward_pass(m, X_batch, bs, z1, a1, z2, probs);
+            memcpy(delta3, probs, bs * m->n_out * sizeof(float));
+            for (int i = 0; i < bs; ++i)
+                delta3[i * m->n_out + y_batch[i]] -= 1.0f;
 
-        matmul_Ta_b(X_train, delta2, dW1, N_train, m->n_in, m->n_hidden);
-        reduce_sum_rows(delta2, db1, N_train, m->n_hidden);
+            memset(dW1, 0, m->n_in * m->n_hidden * sizeof(float));
+            memset(dW2, 0, m->n_hidden * m->n_out * sizeof(float));
+            memset(db1, 0, m->n_hidden * sizeof(float));
+            memset(db2, 0, m->n_out * sizeof(float));
 
-        // Regularization
-        for (int i = 0; i < m->n_in * m->n_hidden; i++) dW1[i] += m->reg_lambda * m->W1[i];
-        for (int i = 0; i < m->n_hidden * m->n_out; i++) dW2[i] += m->reg_lambda * m->W2[i];
+            matmul_Ta_b(a1, delta3, dW2, bs, m->n_hidden, m->n_out);
+            reduce_sum_rows(delta3, db2, bs, m->n_out);
+            matmul(delta3, m->W2, delta2, bs, m->n_out, m->n_hidden);
+            for (int i = 0; i < bs * m->n_hidden; ++i)
+                delta2[i] *= m->act.deriv(a1[i]);
 
-        // Gradient descent
-        for (int i = 0; i < m->n_in * m->n_hidden; i++) m->W1[i] -= m->lr * dW1[i];
-        for (int i = 0; i < m->n_hidden; i++) m->b1[i] -= m->lr * db1[i];
-        for (int i = 0; i < m->n_hidden * m->n_out; i++) m->W2[i] -= m->lr * dW2[i];
-        for (int i = 0; i < m->n_out; i++) m->b2[i] -= m->lr * db2[i];
+            matmul_Ta_b(X_batch, delta2, dW1, bs, m->n_in, m->n_hidden);
+            reduce_sum_rows(delta2, db1, bs, m->n_hidden);
 
-        // Record losses every 1000 iters
-        if (it % 1000 == 0) {
-            float train_loss = compute_loss(m, X_train, y_train, N_train);
-            float eval_loss  = compute_loss(m, X_test, y_test, N_test);
+            float inv_bs = 1.0f / (float)bs;
+            for (int i = 0; i < m->n_in * m->n_hidden; ++i) dW1[i] = dW1[i] * inv_bs + reg_lambda * m->W1[i];
+            for (int i = 0; i < m->n_hidden * m->n_out; ++i) dW2[i] = dW2[i] * inv_bs + reg_lambda * m->W2[i];
+            for (int i = 0; i < m->n_hidden; ++i) db1[i] *= inv_bs;
+            for (int i = 0; i < m->n_out; ++i) db2[i] *= inv_bs;
 
-            fprintf(f, "%d %.6f %.6f\n", it, train_loss, eval_loss);
+            update_gradient(m, dW1, dW2, db1, db2, lr_t);
+        }
 
-            if (print_loss)
-                printf("[%s] Iter %d: train_loss=%.6f, eval_loss=%.6f\n",
-                       act_name, it, train_loss, eval_loss);
+        if (print_loss && (epoch % 100 == 0 || epoch == num_passes - 1)) {
+            float train_loss = compute_loss(m, X_train, y_train, N_train, reg_lambda);
+            float eval_loss  = compute_loss(m, X_test, y_test, N_test, reg_lambda);
+            fprintf(f, "%d %.6f %.6f\n", epoch, train_loss, eval_loss);
+            printf("[%s] Epoch %d | LR = %.6f | Train Loss = %.6f | Eval Loss = %.6f\n",
+                   act_name, epoch, lr_t, train_loss, eval_loss);
         }
     }
 
-    // Cleanup
     fclose(f);
     free(z1); free(a1); free(z2); free(probs);
-    free(delta3); free(delta2);
-    free(dW1); free(dW2);
-    free(db1); free(db2);
+    free(delta3); free(delta2); free(dW1); free(dW2);
+    free(db1); free(db2); free(X_batch); free(y_batch);
 }
 
-
 // --------------------------------------------------------
-// Evaluate model accuracy and loss on test data
+// Evaluate
 // --------------------------------------------------------
-float evaluate(MLP *m, float *X, int *y, int N)
-{
+float evaluate(MLP *m, float *X, int *y, int N) {
     int correct = 0;
-
     float *z1 = calloc(N * m->n_hidden, sizeof(float));
     float *a1 = calloc(N * m->n_hidden, sizeof(float));
     float *z2 = calloc(N * m->n_out, sizeof(float));
     float *probs = calloc(N * m->n_out, sizeof(float));
 
-    // Forward pass
     forward_pass(m, X, N, z1, a1, z2, probs);
-
-    // Compute accuracy
     for (int i = 0; i < N; i++) {
         int pred = 0;
         float maxp = probs[i * m->n_out];
@@ -183,14 +203,9 @@ float evaluate(MLP *m, float *X, int *y, int N)
         if (pred == y[i]) correct++;
     }
 
-    float acc = (float)correct / N;
-
-    // Cleanup
     free(z1); free(a1); free(z2); free(probs);
-
-    return acc;
+    return (float)correct / N;
 }
-
 
 // --------------------------------------------------------
 // Create and free model
@@ -215,9 +230,6 @@ MLP *create_model(int n_in, int n_hidden, int n_out, Activation act) {
 
 void free_model(MLP *m) {
     if (!m) return;
-    free(m->W1);
-    free(m->b1);
-    free(m->W2);
-    free(m->b2);
+    free(m->W1); free(m->b1); free(m->W2); free(m->b2);
     free(m);
 }
