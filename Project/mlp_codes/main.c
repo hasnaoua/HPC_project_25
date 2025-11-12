@@ -42,7 +42,7 @@ int main() {
     // -------------------------
     // Split into training / testing
     // -------------------------
-    int train_size = (int)(0.8 * num_examples);
+    int train_size = (int)(0.7 * num_examples);
     int test_size  = num_examples - train_size;
 
     float *X_train = X;
@@ -74,7 +74,7 @@ int main() {
 
         clock_t start_time = clock();
         //train(model, X_train, y_train, train_size, 50000, 1);
-        train(model, X_train, y_train, train_size, X_test,  y_test,  test_size, 50000, 1);
+        train(model, X_train, y_train, train_size, X_test,  y_test,  test_size, 20000, 1);
         clock_t end_time = clock();
 
         float elapsed = (float)(end_time - start_time) / CLOCKS_PER_SEC;
