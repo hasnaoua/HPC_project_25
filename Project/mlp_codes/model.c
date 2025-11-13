@@ -97,7 +97,9 @@ void train(MLP *m,
     const char *act_name = "unknown";
     if (m->act.func == ACT_TANH.func) act_name = "tanh";
     else if (m->act.func == ACT_RELU.func) act_name = "relu";
+    else if (m->act.func == ACT_LEAKY_RELU.func) act_name = "leak relu";
     else if (m->act.func == ACT_SIGMOID.func) act_name = "sigmoid";
+    
 
     char loss_file[128];
     sprintf(loss_file, "Losses/loss_%s.txt", act_name);
@@ -165,7 +167,7 @@ void train(MLP *m,
             update_gradient(m, dW1, dW2, db1, db2, lr_t);
         }
 
-        if (print_loss && (epoch % 100 == 0 || epoch == num_passes - 1)) {
+        if (print_loss && (epoch % 10 == 0 || epoch == num_passes - 1)) {
             float train_loss = compute_loss(m, X_train, y_train, N_train, reg_lambda);
             float eval_loss  = compute_loss(m, X_test, y_test, N_test, reg_lambda);
             fprintf(f, "%d %.6f %.6f\n", epoch, train_loss, eval_loss);

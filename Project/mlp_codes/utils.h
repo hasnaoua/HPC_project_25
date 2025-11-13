@@ -23,6 +23,8 @@ typedef struct {
 extern Activation ACT_TANH;
 extern Activation ACT_RELU;
 extern Activation ACT_SIGMOID;
+extern Activation ACT_LEAKY_RELU;
+
 
 // =====================================================
 // Random

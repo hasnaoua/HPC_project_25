@@ -18,7 +18,7 @@ int main() {
     float reg_lambda = 0.01f;
     float lr0 = 0.01f;
     int batch_size = 64;
-    int num_passes = 2000;
+    int num_passes = 200;
     float decay_k = 0.001f;
 
     int num_examples = count_lines(file_y);
@@ -39,18 +39,19 @@ int main() {
 
     mkdir("Losses", 0777);
 
-    Activation activations[] = {ACT_TANH, ACT_RELU, ACT_SIGMOID};
-    const char *act_names[]  = {"tanh", "relu", "sigmoid"};
+    Activation activations[] = {ACT_TANH, ACT_RELU, ACT_LEAKY_RELU, ACT_SIGMOID};
+    const char *act_names[]  = {"tanh", "relu", "leaky_relu", "sigmoid"};
+    int num_acts = 4;
 
     // Learning rate mode: 0=fixed, 1=inverse, 2=exponential
     int lr_choice = 2;
     LRSchedule schedule = NULL;
-    if (lr_choice == 1) schedule = inverse_time_decay;
+    if (lr_choice == 12) schedule = inverse_time_decay;
     else if (lr_choice == 2) schedule = exponential_decay;
 
     // Loop over activation functions
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < num_acts; i++) {
         printf("\n========================================\n");
         printf("Training with activation: %s\n", act_names[i]);
         printf("========================================\n");

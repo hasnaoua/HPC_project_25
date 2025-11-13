@@ -152,10 +152,16 @@ static float relu_f(float x) { return x > 0 ? x : 0.0f; }
 static float relu_d(float a) { return a > 0 ? 1.0f : 0.0f; }
 Activation ACT_RELU = {relu_f, relu_d};
 
+// Leaky ReLU
+static float leaky_relu_f(float x) { return x > 0 ? x : 0.01f * x; }
+static float leaky_relu_d(float a) { return a > 0 ? 1.0f : 0.01f; }
+Activation ACT_LEAKY_RELU = {leaky_relu_f, leaky_relu_d};
+
 // Sigmoid
 static float sigmoid_f(float x) { return 1.0f / (1.0f + expf(-x)); }
 static float sigmoid_d(float a) { return a * (1.0f - a); }
 Activation ACT_SIGMOID = {sigmoid_f, sigmoid_d};
+
 
 // =====================================================
 // Tanh derivative over matrix (uses tanh_d now)
