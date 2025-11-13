@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-
+#include <time.h> 
+ 
 // --------------------------------------------------------
 // Learning Rate Schedules
 // --------------------------------------------------------
@@ -88,6 +89,7 @@ void update_gradient(MLP *m, float *dW1, float *dW2, float *db1, float *db2, flo
 // --------------------------------------------------------
 // Training: backprop + dynamic LR
 // --------------------------------------------------------
+
 void train(MLP *m,
            float *X_train, int *y_train, int N_train, float lr0,
            float reg_lambda, int batch_size, float *X_test, int *y_test,
@@ -97,9 +99,8 @@ void train(MLP *m,
     const char *act_name = "unknown";
     if (m->act.func == ACT_TANH.func) act_name = "tanh";
     else if (m->act.func == ACT_RELU.func) act_name = "relu";
-    else if (m->act.func == ACT_LEAKY_RELU.func) act_name = "leak relu";
+    else if (m->act.func == ACT_LEAKY_RELU.func) act_name = "leaky_relu";
     else if (m->act.func == ACT_SIGMOID.func) act_name = "sigmoid";
-    
 
     char loss_file[128];
     sprintf(loss_file, "Losses/loss_%s.txt", act_name);
@@ -124,6 +125,12 @@ void train(MLP *m,
     int *y_batch = malloc(maxB * sizeof(int));
 
     int num_batches = (N_train + batch_size - 1) / batch_size;
+
+    // 🔹 Track best eval loss
+    float best_eval_loss = INFINITY;
+    int best_epoch = -1;
+    clock_t start_time = clock();
+    clock_t best_time = 0;
 
     for (int epoch = 0; epoch < num_passes; ++epoch) {
         float lr_t = (lr_schedule != NULL) ? lr_schedule(lr0, k, epoch) : lr0;
@@ -159,21 +166,42 @@ void train(MLP *m,
             reduce_sum_rows(delta2, db1, bs, m->n_hidden);
 
             float inv_bs = 1.0f / (float)bs;
-            for (int i = 0; i < m->n_in * m->n_hidden; ++i) dW1[i] = dW1[i] * inv_bs + reg_lambda * m->W1[i];
-            for (int i = 0; i < m->n_hidden * m->n_out; ++i) dW2[i] = dW2[i] * inv_bs + reg_lambda * m->W2[i];
-            for (int i = 0; i < m->n_hidden; ++i) db1[i] *= inv_bs;
-            for (int i = 0; i < m->n_out; ++i) db2[i] *= inv_bs;
+            for (int i = 0; i < m->n_in * m->n_hidden; ++i)
+                dW1[i] = dW1[i] * inv_bs + reg_lambda * m->W1[i];
+            for (int i = 0; i < m->n_hidden * m->n_out; ++i)
+                dW2[i] = dW2[i] * inv_bs + reg_lambda * m->W2[i];
+            for (int i = 0; i < m->n_hidden; ++i)
+                db1[i] *= inv_bs;
+            for (int i = 0; i < m->n_out; ++i)
+                db2[i] *= inv_bs;
 
             update_gradient(m, dW1, dW2, db1, db2, lr_t);
         }
 
-        if (print_loss && (epoch % 10 == 0 || epoch == num_passes - 1)) {
+        // 🔹 Evaluate and log losses every 10 epochs
+        if (print_loss && (epoch % 100 == 0 || epoch == num_passes - 1)) {
             float train_loss = compute_loss(m, X_train, y_train, N_train, reg_lambda);
             float eval_loss  = compute_loss(m, X_test, y_test, N_test, reg_lambda);
+
             fprintf(f, "%d %.6f %.6f\n", epoch, train_loss, eval_loss);
             printf("[%s] Epoch %d | LR = %.6f | Train Loss = %.6f | Eval Loss = %.6f\n",
                    act_name, epoch, lr_t, train_loss, eval_loss);
+
+            // 🔹 Update best eval loss
+            if (eval_loss < best_eval_loss) {
+                best_eval_loss = eval_loss;
+                best_epoch = epoch;
+                best_time = clock() - start_time;
+            }
         }
+    }
+
+    // 🔹 Compute mean time per epoch (up to best eval loss)
+    if (best_epoch >= 0) {
+        double total_seconds = ((double)best_time) / CLOCKS_PER_SEC;
+        double mean_time = total_seconds / (best_epoch + 1);
+        printf("✅ [%s] Best Eval Loss = %.6f at Epoch %d\n", act_name, best_eval_loss, best_epoch);
+        printf("⏱️  Mean time per epoch until best = %.6f seconds\n", mean_time);
     }
 
     fclose(f);
@@ -181,6 +209,7 @@ void train(MLP *m,
     free(delta3); free(delta2); free(dW1); free(dW2);
     free(db1); free(db2); free(X_batch); free(y_batch);
 }
+
 
 // --------------------------------------------------------
 // Evaluate

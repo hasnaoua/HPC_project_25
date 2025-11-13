@@ -18,7 +18,7 @@ int main() {
     float reg_lambda = 0.01f;
     float lr0 = 0.01f;
     int batch_size = 64;
-    int num_passes = 200;
+    int num_passes = 20000;
     float decay_k = 0.001f;
 
     int num_examples = count_lines(file_y);
@@ -44,9 +44,9 @@ int main() {
     int num_acts = 4;
 
     // Learning rate mode: 0=fixed, 1=inverse, 2=exponential
-    int lr_choice = 2;
+    int lr_choice = 1;
     LRSchedule schedule = NULL;
-    if (lr_choice == 12) schedule = inverse_time_decay;
+    if (lr_choice == 1) schedule = inverse_time_decay;
     else if (lr_choice == 2) schedule = exponential_decay;
 
     // Loop over activation functions
