@@ -1,19 +1,30 @@
 #include "utils.h"
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 // =====================================================
-// Random Normal (Box–Muller transform)
+// Thread-safe Random Normal (Box–Muller)
 // =====================================================
 float randn(void)
 {
-    float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
-    float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 1.0f);
+#if defined(_OPENMP)
+    unsigned int seed = 1234u * (unsigned int)omp_get_thread_num()
+                      ^ (unsigned int)time(NULL);
+
+    float u = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
+    float v = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
+#else
+    float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
+    float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
+#endif
+
     return sqrtf(-2.0f * logf(u)) * cosf(2.0f * M_PI * v);
 }
 
 // =====================================================
-// Matrix multiplication: C = A[n×m] * B[m×p]
+// matmul: C = A[n×m] * B[m×p]
+// Highly optimized (OpenMP + cache blocking)
 // =====================================================
 void matmul(const float *restrict A,
             const float *restrict B,
@@ -21,8 +32,9 @@ void matmul(const float *restrict A,
             int n, int m, int p)
 {
     memset(C, 0, sizeof(float) * (size_t)(n * p));
+
     size_t work = (size_t)n * m * p;
-    const size_t OMP_THRESHOLD = 50000;
+    const size_t OMP_THRESHOLD = 60000;
 
     if (work < OMP_THRESHOLD)
     {
@@ -44,12 +56,12 @@ void matmul(const float *restrict A,
 #pragma omp parallel for collapse(2) schedule(static)
 #endif
     for (int i0 = 0; i0 < n; i0 += TILE)
-        for (int j0 = 0; j0 < p; j0 += TILE)
-            for (int k0 = 0; k0 < m; k0 += TILE)
+        for (int k0 = 0; k0 < m; k0 += TILE)
+            for (int j0 = 0; j0 < p; j0 += TILE)
             {
                 int iMax = (i0 + TILE < n) ? (i0 + TILE) : n;
-                int jMax = (j0 + TILE < p) ? (j0 + TILE) : p;
                 int kMax = (k0 + TILE < m) ? (k0 + TILE) : m;
+                int jMax = (j0 + TILE < p) ? (j0 + TILE) : p;
 
                 for (int i = i0; i < iMax; i++)
                 {
@@ -66,7 +78,7 @@ void matmul(const float *restrict A,
 }
 
 // =====================================================
-// C = Aᵀ * B
+// matmul_Ta_b: C = Aᵀ[M×N] * B[N×K]
 // =====================================================
 void matmul_Ta_b(const float *restrict A,
                  const float *restrict B,
@@ -74,8 +86,9 @@ void matmul_Ta_b(const float *restrict A,
                  int N, int M, int K)
 {
     memset(C, 0, sizeof(float) * (size_t)(M * K));
+
     size_t work = (size_t)N * M * K;
-    const size_t OMP_THRESHOLD = 50000;
+    const size_t OMP_THRESHOLD = 60000;
 
     if (work < OMP_THRESHOLD)
     {
@@ -97,12 +110,12 @@ void matmul_Ta_b(const float *restrict A,
 #pragma omp parallel for collapse(2) schedule(static)
 #endif
     for (int i0 = 0; i0 < M; i0 += TILE)
-        for (int j0 = 0; j0 < K; j0 += TILE)
-            for (int n0 = 0; n0 < N; n0 += TILE)
+        for (int n0 = 0; n0 < N; n0 += TILE)
+            for (int j0 = 0; j0 < K; j0 += TILE)
             {
                 int iMax = (i0 + TILE < M) ? (i0 + TILE) : M;
-                int jMax = (j0 + TILE < K) ? (j0 + TILE) : K;
                 int nMax = (n0 + TILE < N) ? (n0 + TILE) : N;
+                int jMax = (j0 + TILE < K) ? (j0 + TILE) : K;
 
                 for (int i = i0; i < iMax; i++)
                 {
@@ -119,12 +132,13 @@ void matmul_Ta_b(const float *restrict A,
 }
 
 // =====================================================
-// Row-wise sum
+// Row reduction: out[j] = Σ_n mat[n][j]
 // =====================================================
 void reduce_sum_rows(const float *mat, float *out, int N, int D)
 {
     for (int j = 0; j < D; j++)
         out[j] = 0.0f;
+
 #if defined(_OPENMP)
 #pragma omp parallel for reduction(+ : out[ : D]) schedule(static)
 #endif
@@ -137,7 +151,7 @@ void reduce_sum_rows(const float *mat, float *out, int N, int D)
 }
 
 // =====================================================
-// Add bias
+// Add bias to each row
 // =====================================================
 void add_bias(float *Z, const float *b, int n, int p)
 {
@@ -153,21 +167,27 @@ void add_bias(float *Z, const float *b, int n, int p)
 }
 
 // =====================================================
-// Activations and softmax (unchanged)
+// Activation functions
 // =====================================================
-
 static float tanh_f(float x) { return tanhf(x); }
 static float tanh_d(float a) { return 1.0f - a * a; }
 Activation ACT_TANH = {tanh_f, tanh_d};
 
-static float relu_f(float x) { return x > 0 ? x : 0.0f; }
-static float relu_d(float a) { return a > 0 ? 1.0f : 0.0f; }
+static float relu_f(float x) { return (x > 0) ? x : 0.0f; }
+static float relu_d(float a) { return (a > 0) ? 1.0f : 0.0f; }
 Activation ACT_RELU = {relu_f, relu_d};
+
+static float leaky_relu_f(float x) { return (x > 0 ? x : 0.01f * x); }
+static float leaky_relu_d(float a) { return (a > 0 ? 1.0f : 0.01f); }
+Activation ACT_LEAKY_RELU = {leaky_relu_f, leaky_relu_d};
 
 static float sigmoid_f(float x) { return 1.0f / (1.0f + expf(-x)); }
 static float sigmoid_d(float a) { return a * (1.0f - a); }
 Activation ACT_SIGMOID = {sigmoid_f, sigmoid_d};
 
+// =====================================================
+// Stable softmax (subtract max for numerical safety)
+// =====================================================
 void softmax(const float *Z, float *P, int n, int p)
 {
 #if defined(_OPENMP)
@@ -176,20 +196,41 @@ void softmax(const float *Z, float *P, int n, int p)
     for (int i = 0; i < n; i++)
     {
         int r = i * p;
+
+        float maxv = Z[r];
+        for (int j = 1; j < p; j++)
+            if (Z[r + j] > maxv)
+                maxv = Z[r + j];
+
         float s = 0.0f;
         for (int j = 0; j < p; j++)
         {
-            P[r + j] = expf(Z[r + j]);
-            s += P[r + j];
+            float e = expf(Z[r + j] - maxv);
+            P[r + j] = e;
+            s += e;
         }
-        float inv = 1.0f / s;
+
+        float inv_s = 1.0f / s;
         for (int j = 0; j < p; j++)
-            P[r + j] *= inv;
+            P[r + j] *= inv_s;
     }
 }
 
+// --------------------------------------------------------
+// Learning rate schedules
+// --------------------------------------------------------
+float inverse_time_decay(float eta0, float k, int t)
+{
+    return eta0 / (1.0f + k * t);
+}
+
+float exponential_decay(float eta0, float k, int t)
+{
+    return eta0 * expf(-k * t);
+}
+
 // =====================================================
-// File loading (unchanged)
+// File loading
 // =====================================================
 int count_lines(const char *filename)
 {
