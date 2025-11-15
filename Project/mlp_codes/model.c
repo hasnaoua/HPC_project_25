@@ -169,7 +169,8 @@ void train(MLP *m, float *X, int *y, int N,
     }
 
     if (batch_size <= 0 || batch_size > N) batch_size = N;
-    int num_batches = (N + batch_size - 1) / batch_size;
+    int num_batches = (N + batch_size - 1) / batch_size ? batch_size < N : 1;
+    printf("num_batches : %d \n", num_batches);
 
     int L1 = m->n_in * m->n_hidden;
     int L2 = m->n_hidden * m->n_out;
@@ -275,3 +276,4 @@ void train(MLP *m, float *X, int *y, int N,
     free(delta3); free(delta2); free(dW1); free(dW2);
     free(db1); free(db2); free(Xb); free(yb);
 }
+
