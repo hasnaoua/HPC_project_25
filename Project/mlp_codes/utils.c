@@ -9,8 +9,7 @@
 float randn(void)
 {
 #if defined(_OPENMP)
-    unsigned int seed = 1234u * (unsigned int)omp_get_thread_num()
-                      ^ (unsigned int)time(NULL);
+    unsigned int seed = 1234u * (unsigned int)omp_get_thread_num() ^ (unsigned int)time(NULL);
 
     float u = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
     float v = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
@@ -51,6 +50,16 @@ void matmul(const float *restrict A,
         }
         return;
     }
+    int num_threads = 1;
+#if defined(_OPENMP)
+    num_threads = omp_get_max_threads();
+#endif
+
+    int TILE = (n * m) / num_threads;
+    if (TILE < 16)
+        TILE = 16; // prevent too small tiles
+    if (TILE > n)
+        TILE = n; // avoid tile bigger than matrix
 
 #if defined(_OPENMP)
 #pragma omp parallel for collapse(2) schedule(static)
@@ -106,6 +115,18 @@ void matmul_Ta_b(const float *restrict A,
         return;
     }
 
+    int num_threads = 1;
+#if defined(_OPENMP)
+    num_threads = omp_get_max_threads();
+#endif
+
+    // Dynamic tile size based on threads
+    int TILE = (M * N) / num_threads;
+    if (TILE < 16)
+        TILE = 16;
+    if (TILE > M)
+        TILE = M;
+
 #if defined(_OPENMP)
 #pragma omp parallel for collapse(2) schedule(static)
 #endif
@@ -122,7 +143,7 @@ void matmul_Ta_b(const float *restrict A,
                     int rC = i * K;
                     for (int n = n0; n < nMax; n++)
                     {
-                        float a = A[n * M + i];
+                        float a = A[n * M + i]; 
                         int rB = n * K;
                         for (int j = j0; j < jMax; j++)
                             C[rC + j] += a * B[rB + j];
