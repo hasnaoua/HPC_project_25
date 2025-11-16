@@ -9,8 +9,6 @@
 #define M_PI 3.14159265358979323846f
 #endif
 
-#define TILE 16   // Used by tiled matmul (if implemented)
-
 #ifdef _OPENMP
 #include <omp.h>
 #endif
