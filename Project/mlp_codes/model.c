@@ -134,11 +134,10 @@ float compute_loss(MLP *m, float *X, int *y, int N, float reg_lambda)
         goto cleanup;
     }
 
-    // ⚡ éventuellement parallélisable si forward_pass utilise omp internally
     forward_pass(m, X, N, z1, a1, z2, probs);
 
     // ---------------------------------
-    // 🔵 Parallel loss accumulation
+    // Parallel loss accumulation
     // ---------------------------------
     #pragma omp parallel for reduction(+:loss)
     for (int i = 0; i < N; i++)
@@ -150,7 +149,7 @@ float compute_loss(MLP *m, float *X, int *y, int N, float reg_lambda)
     }
 
     // ---------------------------------
-    // 🔵 Regularization term (parallel)
+    // Regularization term
     // ---------------------------------
     float reg = 0.0f;
 
@@ -266,7 +265,7 @@ void train(MLP *m, float *X, int *y, int N,
             int start = b * batch_size;
             int bs = (start + batch_size <= N) ? batch_size : (N - start);
 
-            /* 1) Copy batch (sample-parallel) */
+            /*  Copy batch */
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
@@ -278,10 +277,10 @@ void train(MLP *m, float *X, int *y, int N,
                 yb[i] = y[start + i];
             }
 
-            /* 2) Forward */
+            /* Forward /
             forward_pass(m, Xb, bs, z1, a1, z2, probs);
 
-            /* 3) Build delta3 = probs; delta3[i, yb[i]] -= 1 */
+            /* delta3 = probs; delta3[i, yb[i]] -= 1 */
             memcpy(delta3, probs, (size_t)bs * m->n_out * sizeof(float));
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
@@ -292,7 +291,7 @@ void train(MLP *m, float *X, int *y, int N,
                 delta3[idx] -= 1.0f;
             }
 
-            /* 4) Zero gradient accumulators (parallel-safe) */
+            /* Zero gradient accumulators */
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
@@ -310,24 +309,22 @@ void train(MLP *m, float *X, int *y, int N,
 #endif
             for (int i = 0; i < m->n_out; i++) db2[i] = 0.0f;
 
-            /* 5) Gradients (heavy ops handled by matmul/__ functions) */
+            /* Gradients */
             matmul_Ta_b(a1, delta3, dW2, bs, m->n_hidden, m->n_out);
             reduce_sum_rows(delta3, db2, bs, m->n_out);
 
             matmul(delta3, m->W2, delta2, bs, m->n_out, m->n_hidden);
-
-            /* 6) Multiply delta2 by activation derivative (sample-parallel) */
+            
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
             for (int i = 0; i < bs * m->n_hidden; i++)
                 delta2[i] *= m->act.deriv(a1[i]);
 
-            /* 7) Continue gradient computation */
             matmul_Ta_b(Xb, delta2, dW1, bs, m->n_in, m->n_hidden);
             reduce_sum_rows(delta2, db1, bs, m->n_hidden);
 
-            /* 8) Normalize + regularize (elementwise — parallel-safe) */
+            /* regularize */
             float inv_bs = 1.0f / (float)bs;
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
@@ -350,7 +347,7 @@ void train(MLP *m, float *X, int *y, int N,
             for (int i = 0; i < m->n_out; i++)
                 db2[i] *= inv_bs;
 
-            /* 9) MPI gradient reduction (single-threaded region — safe since no active parallel region) */
+            /* MPI gradient reduction */
             if (mpi_initialized && world_size > 1)
             {
                 MPI_Allreduce(MPI_IN_PLACE, dW1, L1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
@@ -377,11 +374,11 @@ void train(MLP *m, float *X, int *y, int N,
                 for (int i = 0; i < m->n_out; i++) db2[i] *= inv;
             }
 
-            /* 10) Apply update */
+            /* update */
             update_gradient(m, dW1, dW2, db1, db2, lr_t);
-        } // end batches
+        } 
 
-        /* Print loss (local average -> global average on rank 0) */
+        /* Print loss */
         if (print_loss && (epoch % 100 == 0 || epoch == num_passes - 1))
         {
             float local_L = compute_loss(m, X, y, N, reg_lambda);
@@ -397,9 +394,9 @@ void train(MLP *m, float *X, int *y, int N,
                 printf("Epoch %d / %d  Loss: %.6f\n", epoch, num_passes, global_L);
             }
         }
-    } // end epochs
+    }
 
-    /* ---- Free buffers once after training ---- */
+    /* ---- Free buffers ---- */
     free(z1);
     free(a1);
     free(z2);
@@ -413,4 +410,5 @@ void train(MLP *m, float *X, int *y, int N,
     free(Xb);
     free(yb);
 }
+
 
