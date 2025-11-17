@@ -23,7 +23,6 @@ float randn(void)
 
 // =====================================================
 // matmul: C = A[n×m] * B[m×p]
-// Highly optimized (OpenMP + cache blocking)
 // =====================================================
 void matmul(const float *restrict A,
             const float *restrict B,
@@ -87,7 +86,7 @@ void matmul(const float *restrict A,
 }
 
 // =====================================================
-// matmul_Ta_b: C = Aᵀ[M×N] * B[N×K]
+// C = Aᵀ[M×N] * B[N×K]
 // =====================================================
 void matmul_Ta_b(const float *restrict A,
                  const float *restrict B,
@@ -153,7 +152,7 @@ void matmul_Ta_b(const float *restrict A,
 }
 
 // =====================================================
-// Row reduction: out[j] = Σ_n mat[n][j]
+// out[j] = Σ_n mat[n][j]
 // =====================================================
 void reduce_sum_rows(const float *mat, float *out, int N, int D)
 {
@@ -172,7 +171,7 @@ void reduce_sum_rows(const float *mat, float *out, int N, int D)
 }
 
 // =====================================================
-// Add bias to each row
+// Add bias 
 // =====================================================
 void add_bias(float *Z, const float *b, int n, int p)
 {
@@ -303,3 +302,4 @@ void load_y(const char *filename, int *y, int N)
         }
     fclose(fp);
 }
+
