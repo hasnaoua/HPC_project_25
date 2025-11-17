@@ -261,7 +261,7 @@ void train(MLP *m, float *X, int *y, int N,
                 yb[i] = y[start + i];
             }
 
-            /* Forward /
+            /* Forward */
             forward_pass(m, Xb, bs, z1, a1, z2, probs);
 
             /* delta3 = probs; delta3[i, yb[i]] -= 1 */
@@ -394,6 +394,7 @@ void train(MLP *m, float *X, int *y, int N,
     free(Xb);
     free(yb);
 }
+
 
 
 
