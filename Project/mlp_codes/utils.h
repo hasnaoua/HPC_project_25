@@ -33,6 +33,7 @@ extern Activation ACT_LEAKY_RELU;
 // =====================================================
 // Gaussian random number using Box–Muller
 float randn(void);
+float thread_randn(unsigned int *seed)
 
 // =====================================================
 // Matrix operations
@@ -84,3 +85,4 @@ void load_X(const char *filename, float *X, int N, int D);
 void load_y(const char *filename, int *y, int N);
 
 #endif // UTILS_H
+
