@@ -11,22 +11,6 @@
 #include <omp.h>
 #endif
 
-// ---------- Thread-safe random ----------
-
-static inline float thread_rand_uniform(unsigned int *state)
-{
-    return (rand_r(state) + 1.0f) / ((float)RAND_MAX + 2.0f);
-}
-
-static inline float thread_randn(unsigned int *state)
-{
-    float u1 = thread_rand_uniform(state);
-    float u2 = thread_rand_uniform(state);
-    float r = sqrtf(-2.0f * logf(u1));
-    float theta = 2.0f * (float)M_PI * u2;
-    return r * cosf(theta);
-}
-
 // ---------- Initialize weights ----------
 void init_weights(MLP *m)
 {
@@ -410,5 +394,6 @@ void train(MLP *m, float *X, int *y, int N,
     free(Xb);
     free(yb);
 }
+
 
 
