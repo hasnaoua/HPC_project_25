@@ -19,9 +19,9 @@ typedef struct {
     float *b2;
 } MLP;
 
-static inline float thread_rand_uniform(unsigned int *state)
+static inline float thread_rand_uniform(unsigned int *state);
 
-static inline float thread_randn(unsigned int *state)
+static inline float thread_randn(unsigned int *state);
 
 // =====================================================
 // Model creation / deletion
@@ -47,4 +47,5 @@ void train(MLP *m, float *X, int *y, int N,
            LRSchedule lr_schedule, float k);
 
 #endif // MODEL_H
+
 
