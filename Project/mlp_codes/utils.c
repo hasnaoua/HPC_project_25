@@ -3,39 +3,6 @@
 #include <time.h>
 #include <math.h>
 
-// =====================================================
-// Thread-safe Random Normal (Box–Muller)
-// =====================================================
-float randn(void)
-{
-#if defined(_OPENMP)
-    unsigned int seed = 1234u * (unsigned int)omp_get_thread_num() ^ (unsigned int)time(NULL);
-
-    float u = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
-    float v = (rand_r(&seed) + 1.0f) / ((float)RAND_MAX + 2.0f);
-#else
-    float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
-    float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
-#endif
-
-    return sqrtf(-2.0f * logf(u)) * cosf(2.0f * M_PI * v);
-}
-
-float thread_randn(unsigned int *seed)
-{
-#ifdef _OPENMP
-    unsigned int s = *seed;
-    float u = (rand_r(&s) + 1.0f) / ((float)RAND_MAX + 2.0f);
-    float v = (rand_r(&s) + 1.0f) / ((float)RAND_MAX + 2.0f);
-    *seed = s;
-#else
-    float u = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
-    float v = ((float)rand() + 1.0f) / ((float)RAND_MAX + 2.0f);
-#endif
-
-    return sqrtf(-2.0f * logf(u)) * cosf(2.0f * M_PI * v);
-}
-
 
 // =====================================================
 // matmul: C = A[n×m] * B[m×p]
@@ -318,5 +285,6 @@ void load_y(const char *filename, int *y, int N)
         }
     fclose(fp);
 }
+
 
 
