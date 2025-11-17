@@ -29,13 +29,6 @@ extern Activation ACT_SIGMOID;
 extern Activation ACT_LEAKY_RELU;
 
 // =====================================================
-// Random utilities
-// =====================================================
-// Gaussian random number using Box–Muller
-float randn(void);
-float thread_randn(unsigned int *seed)
-
-// =====================================================
 // Matrix operations
 // =====================================================
 // C = A (n×m) @ B (m×p)
@@ -85,4 +78,5 @@ void load_X(const char *filename, float *X, int N, int D);
 void load_y(const char *filename, int *y, int N);
 
 #endif // UTILS_H
+
 
