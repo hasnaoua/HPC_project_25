@@ -26,6 +26,8 @@ This project implements a **Multilayer Perceptron (MLP)** with a single hidden l
 - C compiler with OpenMP support (e.g., `gcc`, `mpicc`)
 - MPI library (e.g., `OpenMPI`, `MPICH`)
 - Make
+- Create in your local your own folder named data (for stroring features and labels)
+- Create in your local your own folder named output (for stroring weights final updated values after training)
 
 Tested on Linux environments.
 
