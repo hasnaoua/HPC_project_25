@@ -285,6 +285,3 @@ void load_y(const char *filename, int *y, int N)
         }
     fclose(fp);
 }
-
-
-
