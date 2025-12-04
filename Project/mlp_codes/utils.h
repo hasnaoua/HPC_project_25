@@ -78,5 +78,3 @@ void load_X(const char *filename, float *X, int N, int D);
 void load_y(const char *filename, int *y, int N);
 
 #endif // UTILS_H
-
-
