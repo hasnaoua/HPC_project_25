@@ -411,8 +411,3 @@ void train(MLP *m, float *X, int *y, int N,
     free(Xb);
     free(yb);
 }
-
-
-
-
-
