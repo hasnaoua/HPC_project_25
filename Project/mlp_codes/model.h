@@ -43,6 +43,3 @@ void train(MLP *m, float *X, int *y, int N,
            LRSchedule lr_schedule, float k);
 
 #endif // MODEL_H
-
-
-
