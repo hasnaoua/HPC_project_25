@@ -36,46 +36,75 @@ Tested on Linux environments.
 
 ## Compilation
 
-```bash
-make
+# Build
+
 This will produce the executable:
 
-nginx
-Copy code
+```
+make
+```
+
+Output binary:
+
+```
 mlp
-The Makefile includes optimization flags (-O3 -march=native -ffast-math) and OpenMP support.
+```
 
-Dataset
-Example dataset included: data/data_X.txt and data/data_y.txt (10000 samples).
+**Notes:**  
+The Makefile uses optimization flags:
 
-data_X.txt → input features (one row per sample)
+- `-O3`  
+- `-march=native`  
+- `-ffast-math`  
+- OpenMP support enabled
 
-data_y.txt → labels (integer class indices)
+---
 
-You can generate your own dataset using Python or any other tool.
+# Dataset
 
-Usage
-Run with MPI and a single OpenMP thread
-bash
-Copy code
+Example dataset (10,000 samples):
+
+- `data/data_X.txt` → input features (one row per sample)  
+- `data/data_y.txt` → labels (integer class indices)
+
+You can generate your own dataset with Python or any tool.
+
+---
+
+# Usage
+
+## Run with MPI and a single OpenMP thread
+
+**Command:**
+```
 export OMP_NUM_THREADS=1
 mpirun -np 4 ./mlp
--np 4 → number of MPI processes
+```
 
-OMP_NUM_THREADS=1 → number of threads per process
+**Explanation:**
+- `-np 4` → number of MPI processes  
+- `OMP_NUM_THREADS=1` → one OpenMP thread per process
 
-Run with OpenMP multi-threading (no MPI)
-bash
-Copy code
+---
+
+## Run with OpenMP multi-threading (no MPI)
+
+**Command:**
+```
 export OMP_NUM_THREADS=8
 mpirun -np 1 ./mlp
-1 MPI process using 8 OpenMP threads
+```
 
-Adjusting hyperparameters
-In main.c:
+**Explanation:**  
+1 MPI process using 8 OpenMP threads.
 
-c
-Copy code
+---
+
+# Adjusting Hyperparameters
+
+In `main.c`:
+
+```c
 int input_dim = 2;       // number of input features
 int hidden_dim = 128;    // number of hidden units
 int output_dim = 2;      // number of output classes
@@ -84,31 +113,29 @@ float lr0 = 0.01f;
 int batch_size = 100;    // mini-batch size
 int num_passes = 2000;   // number of epochs
 float decay_k = 0.001f;  // learning rate decay parameter
-Tips:
+```
 
-Increasing hidden_dim increases model capacity but also memory and computation.
+### Tips
+- Increasing `hidden_dim` increases model capacity (and cost).
+- `batch_size` can be tuned depending on `hidden_dim` and thread count.
+- Use `OMP_NUM_THREADS` to exploit multi-core matrix ops.
+- Under MPI: more ranks = smaller local batch → adjust `batch_size`.
 
-batch_size can be tuned according to hidden_dim and number of threads. Larger batches may benefit multi-threading.
+---
 
-Use OMP_NUM_THREADS to utilize multiple cores for matrix operations.
+# Output
 
-MPI: Increasing processes distributes data across nodes but reduces local batch size. Adjust batch size accordingly.
-
-Output
 The program prints:
 
-MPI world size and OpenMP threads
+- MPI world size  
+- OpenMP thread count  
+- Samples per rank  
+- Epoch loss  
+- Training time  
 
-Samples per rank
+**Example:**
 
-Epoch loss (global or summed across MPI ranks)
-
-Training time
-
-Example:
-
-java
-Copy code
+```
 MPI world size = 4
 OpenMP threads = 2
 Samples global = 10000
@@ -117,11 +144,13 @@ Samples per rank ≈ 2500
 Epoch 0 / 2000  Loss (sum over ranks): 2.45
 ...
 Training finished in 1.82 seconds (MPI + OpenMP)
-Code Structure
-main.c → program entry, dataset loading, training
+```
 
-model.c / model.h → MLP definition, forward/backward pass, training, gradient updates
+---
 
-utils.c / utils.h → matrix operations, activations, random number generators, learning rate schedules
+# Code Structure
 
-data/ → example datasets
+- `main.c` → program entry, dataset loading, training loop  
+- `model.c` / `model.h` → MLP, forward/backward pass, updates  
+- `utils.c` / `utils.h` → matrix ops, activations, RNG, LR schedules  
+- `data/` → example datasets
