@@ -1,4 +1,4 @@
-# MLP Project (Abdelhay Hasnaoui -- Sagbo Jean-Claude MITCHOZOUNOU
+# MLP Project 
  
 
 This project implements a **Multilayer Perceptron (MLP)** with a single hidden layer, trained on datasets like the 2D moons dataset. It supports **parallel training using MPI** (data parallelism) and **OpenMP** (multi-threaded matrix operations). It also supports dynamic learning rate schedules.
